@@ -22,6 +22,96 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── Fira Code minimal theme ────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&display=swap');
+
+html, body, [class*="st-"] {
+    font-family: 'Fira Code', monospace;
+}
+
+/* headers */
+h1, h2, h3, .stTabs [data-baseweb="tab"] {
+    font-family: 'Fira Code', monospace;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+}
+h1 { font-size: 1.5rem; color: #c0caf5; }
+h2 { font-size: 1.2rem; color: #a9b1d6; }
+h3 { font-size: 1.05rem; color: #9aa5ce; }
+
+/* sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #16161e;
+    border-right: 1px solid #292e42;
+}
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stNumberInput label {
+    font-size: 0.8rem;
+    color: #565f89;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* metrics */
+[data-testid="stMetric"] {
+    background: #16161e;
+    border: 1px solid #292e42;
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #7aa2f7;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.75rem;
+    color: #565f89;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0;
+    border-bottom: 1px solid #292e42;
+}
+.stTabs [data-baseweb="tab"] {
+    font-size: 0.85rem;
+    color: #565f89;
+    padding: 0.6rem 1.2rem;
+    border: none;
+    background: transparent;
+}
+.stTabs [aria-selected="true"] {
+    color: #7aa2f7;
+    border-bottom: 2px solid #7aa2f7;
+    background: transparent;
+}
+
+/* dataframes */
+.stDataFrame { font-size: 0.8rem; }
+
+/* dividers */
+hr { border-color: #292e42; opacity: 0.5; }
+
+/* inputs */
+.stTextInput input, .stSelectbox [data-baseweb="select"],
+.stNumberInput input {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85rem;
+    background: #16161e;
+    border-color: #292e42;
+    color: #a9b1d6;
+}
+
+/* report text */
+.stMarkdown p { line-height: 1.6; font-size: 0.88rem; }
+</style>
+""", unsafe_allow_html=True)
+
 
 @st.cache_data
 def get_data():
@@ -105,11 +195,16 @@ with tab1:
         x="ccaa",
         y="total_mw",
         color="total_mw",
-        color_continuous_scale="Greens",
+        color_continuous_scale=[[0, "#292e42"], [1, "#7aa2f7"]],
         title=f"Available {selected_cap_label} by Region (MW)",
         labels={"ccaa": "Autonomous Community", "total_mw": "MW"},
     )
-    fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+    fig.update_layout(
+        xaxis_tickangle=-45, showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
+        xaxis=dict(gridcolor="#292e42"), yaxis=dict(gridcolor="#292e42"),
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     # Nodes with vs without capacity
@@ -121,7 +216,11 @@ with tab1:
             names=["Available", "Blocked"],
             values=[avail_count, blocked_count],
             title="Node Availability",
-            color_discrete_sequence=["#2ecc71", "#e74c3c"],
+            color_discrete_sequence=["#7aa2f7", "#414868"],
+        )
+        fig_pie.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
         )
         st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -132,7 +231,11 @@ with tab1:
             names=acuerdo_counts.index,
             values=acuerdo_counts.values,
             title="Agreement Status (Valor de Referencia)",
-            color_discrete_map={"SI": "#2ecc71", "NO": "#e74c3c", "N/A": "#95a5a6"},
+            color_discrete_map={"SI": "#9ece6a", "NO": "#f7768e", "N/A": "#414868"},
+        )
+        fig_acuerdo.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
         )
         st.plotly_chart(fig_acuerdo, use_container_width=True)
 
@@ -193,11 +296,16 @@ with tab3:
         x="criterion",
         y="nodes",
         color="nodes",
-        color_continuous_scale="Reds",
+        color_continuous_scale=[[0, "#292e42"], [1, "#f7768e"]],
         title="Binding Criteria Distribution (CEP CH Demand)",
         labels={"criterion": "Criterion", "nodes": "Node Count"},
     )
-    fig_crit.update_layout(xaxis_tickangle=-45, showlegend=False)
+    fig_crit.update_layout(
+        xaxis_tickangle=-45, showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
+        xaxis=dict(gridcolor="#292e42"), yaxis=dict(gridcolor="#292e42"),
+    )
     st.plotly_chart(fig_crit, use_container_width=True)
 
     st.metric(
@@ -234,8 +342,14 @@ with tab3:
             orientation="h",
             title="Non-Grantable Reasons",
             labels={"reason": "", "count": "Nodes"},
+            color_discrete_sequence=["#e0af68"],
         )
-        fig_motivo.update_layout(yaxis={"autorange": "reversed"})
+        fig_motivo.update_layout(
+            yaxis={"autorange": "reversed"},
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
+            xaxis=dict(gridcolor="#292e42"), yaxis=dict(gridcolor="#292e42"),
+        )
         st.plotly_chart(fig_motivo, use_container_width=True)
 
 # ── Tab 4: Data Center Focus ─────────────────────────────────────────────────
@@ -300,10 +414,16 @@ with tab4:
             "disp_dem_no_cep": "NO CEP Demand (MW)",
             "disp_dem_cep_ch": "CEP CH Demand (MW)",
         },
+        color_discrete_sequence=["#7aa2f7"],
     )
     fig_scatter.add_shape(
         type="line", x0=0, y0=0, x1=3000, y1=3000,
-        line=dict(dash="dash", color="gray"),
+        line=dict(dash="dash", color="#414868"),
+    )
+    fig_scatter.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
+        xaxis=dict(gridcolor="#292e42"), yaxis=dict(gridcolor="#292e42"),
     )
     st.plotly_chart(fig_scatter, use_container_width=True)
     st.caption(

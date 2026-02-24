@@ -1,0 +1,109 @@
+flowchart TD
+    START([START: Open the REE CSV file -- 4 header rows + 937 data rows -- 61 semicolon-delimited columns]) --> PARSE_WARN
+
+    PARSE_WARN[PARSING NOTES -- Encoding: UTF-8 with BOM -- Delimiter: semicolon -- Numbers use DOT as thousands separator -- 1.310 = one thousand three hundred ten -- NOT 1.31 -- Special values: empty, 0, N/A -- all mean different things -- Headers span 4 rows with merged groups]
+    PARSE_WARN --> STEP1
+
+    STEP1[STEP 1: IDENTIFY THE NODE -- Col 1 = Node name + voltage in kV -- Example: ESCATRON 400, ABADES 220 -- Same substation can appear at multiple -- voltages as separate rows -- Col 2 = Substation numeric code -- Col 3 = Region CCAA -- 18 regions, 937 nodes total]
+    STEP1 --> STEP2
+
+    STEP2[STEP 2: CHECK PHYSICAL BAYS -- Cols 4-9 = Three pairs of E/P -- E = Existing, P = Planned -- Cols 4-5: Generation/Storage bays -- Cols 6-7: Demand bays -- Cols 8-9: Distribution connection -- Values are checkmark or empty]
+    STEP2 --> BAY_CHECK{Does Col 6 or Col 7 have a checkmark?}
+    BAY_CHECK -->|NO| NO_BAY[NO DEMAND BAY -- This node has no physical -- connection point for demand -- Civil works needed before -- any demand can connect -- Check Cols 4-5 and 8-9 to see -- what the node IS used for]
+    BAY_CHECK -->|YES| STEP3
+    NO_BAY --> NO_BAY_END([END: Node not feasible without infrastructure works])
+
+    STEP3[STEP 3: READ THE FIVE CRITERIA -- These set the MAXIMUM capacity -- the node can accept -- Final available = MINIMUM of all five]
+    STEP3 --> CRITERIA
+
+    CRITERIA[CRITERION 1: WSCR -- Cols 10-13 -- Col 10 = WSCR nodal capacity in MW -- How much CEP power electronics -- the grid can support here based -- on short-circuit strength -- Only limits CEP demand -- Col 11 = Binudos -- shared WSCR with another node -- Col 12 = Security alerts -- Riesgo interacciones = harmonic risk -- Superacion valor max Icc = equipment limit -- Col 13 = WSCR margin not yet granted]
+    CRITERIA --> CRITERIA2
+
+    CRITERIA2[CRITERION 2: STATIC DEMAND -- Cols 14-17 -- Col 14 = Thermal nodal capacity in MW -- Can cables, transformers, and lines -- carry the load under N-1 contingency -- without overheating? -- Col 15 = Shared zone code SEPE -- Nodes in same zone share a ceiling -- Col 16 = Thermal margin remaining -- Col 17 = Substation config limitation -- No = none -- Si. Caso a/b/c = temporary limitation]
+    CRITERIA2 --> CRITERIA3
+
+    CRITERIA3[CRITERION 3: STATIC STORAGE -- Cols 18-20 -- Same as Static Demand but evaluated -- for storage in charging mode -- Col 18 = Storage thermal capacity MW -- Col 19 = Shared zone -- Col 20 = Storage margin remaining -- Separate because storage has different -- charge/discharge patterns]
+    CRITERIA3 --> CRITERIA4
+
+    CRITERIA4[CRITERION 4: DYNAMIC 1 - TRANSIENT STABILITY -- Col 21 = Din1 margin in MW -- Can the system survive a sudden fault -- like a 150ms short circuit -- without cascading trips? -- 0 = saturated, no room for more load -- MOST FREQUENT BLOCKER: 275 nodes]
+    CRITERIA4 --> CRITERIA5
+
+    CRITERIA5[CRITERION 5: DYNAMIC 2 - DYNAMIC STABILITY -- Col 22 = Din2 margin in MW -- Can the system damp oscillations -- over seconds to minutes -- after a disturbance? -- 0 = saturated]
+    CRITERIA5 --> STEP4
+
+    STEP4[STEP 4: CHECK WHAT IS ALREADY GRANTED -- Cols 23-37 = Existing commitments at this node]
+    STEP4 --> GRANTED
+
+    GRANTED[Col 23 = Reference value MW -- Capacity reserved for distribution demand -- Col 24 = Agreement status -- SI = REE and distributor agreed -- NO = NOT agreed -- 289 nodes blocked by this -- N/A = no distribution connection -- Col 25 = Granted beyond reference value -- Col 26 = Granted CEP affecting WSCR -- Col 27 = Total granted demand on RdT -- Cols 28-29 = Distribution demand grants -- Cols 30-33 = Same for storage -- Col 34 = Granted CH demand on RdT -- Col 35 = Granted SH demand on RdT -- Cols 36-37 = CH/SH via distribution]
+    GRANTED --> STEP5
+
+    STEP5[STEP 5: CHECK PENDING APPLICATIONS -- Col 38 = Demand MW pending resolution -- Col 39 = Storage MW pending resolution -- These are submitted but not yet -- approved or rejected]
+    STEP5 --> STEP6
+
+    STEP6[STEP 6: READ GROSS MARGIN -- Cols 40-44 = Total margin for RdT connection -- BEFORE regulatory restrictions -- Col 40 = Demand CEP CH margin -- Col 41 = Demand CEP SH margin -- ALWAYS 0 across entire network -- Col 42 = Demand NO CEP margin -- Col 43 = Storage CEP margin -- Col 44 = Storage NO CEP margin]
+    STEP6 --> STEP7
+
+    STEP7[STEP 7: IDENTIFY THE BINDING CRITERION -- Cols 45-49 = Which criterion is the bottleneck -- Col 45 = For demand CEP CH -- Col 46 = For demand CEP SH -- Col 47 = For demand NO CEP -- Col 48 = For storage CEP -- Col 49 = For storage NO CEP]
+    STEP7 --> CODES
+
+    CODES[CRITERION CODES: -- Din1_Zona = transient stability zonal -- Din2_Zona = dynamic stability zonal -- WSCR_Nudo = short-circuit at node -- WSCR_Zona = short-circuit at zone -- Est_Dem_Nudo = thermal at node -- Est_Dem_Zona = thermal at zone -- Est_Alm_Nudo = storage thermal at node -- Est_Alm_Zona = storage thermal at zone -- Multiple codes joined with / -- Empty = no technical criterion reported -- usually means regulatory block came first]
+    CODES --> STEP8
+
+    STEP8[STEP 8: CHECK NON-GRANTABLE CAPACITY -- Cols 50-54 = MW technically available but -- blocked for regulatory reasons -- Col 50 = Non-grantable demand CEP CH -- Col 51 = Non-grantable demand CEP SH -- Col 52 = Non-grantable demand NO CEP -- Col 53 = Non-grantable storage CEP -- Col 54 = Non-grantable storage NO CEP -- Col 55 = REASON TEXT]
+    STEP8 --> MOTIVOS
+
+    MOTIVOS[COL 55 REASON VALUES: -- Valor de referencia no acordado = -- REE-distributor agreement missing -- 289 nodes -- Valor de referencia no acordado -- en la zona estatica = -- agreement missing at shared zone level -- Nudo de concurso = -- reserved for competitive tender -- Margen zonal reservado para concurso = -- zonal margin reserved for tender -- EMPTY = no regulatory block]
+    MOTIVOS --> STEP9
+
+    STEP9[STEP 9: READ AVAILABLE CAPACITY -- Cols 56-60 -- THE ANSWER TO -- HOW MANY MW CAN I CONNECT HERE]
+    STEP9 --> PROJECT_TYPE{What is your project?}
+
+    PROJECT_TYPE -->|Data center, electrolyser, or power-electronics load WITH ride-through compliance| READ_CEP_CH
+    PROJECT_TYPE -->|Power-electronics load WITHOUT ride-through| READ_CEP_SH
+    PROJECT_TYPE -->|Conventional direct-connected load like motors or heaters| READ_NOCEP
+    PROJECT_TYPE -->|Battery storage| READ_STORAGE
+
+    READ_CEP_CH[COL 56: Available demand CEP CH -- This is the primary column for -- data centers and electrolysers -- Network total: 39,643 MW -- 75% of nodes show 0 or empty]
+    READ_CEP_SH[COL 57: Available demand CEP SH -- 0 MW AT EVERY SINGLE NODE -- Equipment without voltage-dip -- ride-through CANNOT connect -- anywhere on the Spanish grid]
+    READ_NOCEP[COL 58: Available demand NO CEP -- Usually higher than CEP because -- NOT subject to WSCR criterion -- Network total: 63,732 MW]
+    READ_STORAGE[COL 59: Available storage CEP -- COL 60: Available storage NO CEP -- Uses Est_Alm criterion -- instead of Est_Dem]
+
+    READ_CEP_CH --> STEP10
+    READ_CEP_SH --> SH_STOP([STOP: Redesign equipment for ride-through compliance])
+    READ_NOCEP --> STEP10
+    READ_STORAGE --> STEP10
+
+    STEP10[STEP 10: CHECK TENDER STATUS -- Col 61 = Nudo de concurso -- SI = capacity allocated via -- competitive tender, not -- first-come-first-served -- 76 nodes are tender nodes -- EMPTY = standard application process]
+    STEP10 --> FINAL_CHECK
+
+    FINAL_CHECK{Is Col 56/58/59/60 greater than 0?}
+    FINAL_CHECK -->|YES| VIABLE
+    FINAL_CHECK -->|NO or EMPTY| DIAGNOSE
+
+    VIABLE[NODE HAS AVAILABLE CAPACITY -- Cross-check: -- Col 12 for WSCR alerts -- Col 17 for substation limitations -- Col 45-49 for binding criterion -- to understand what caps the MW -- Col 61 for tender requirement]
+    VIABLE --> VIABLE_END([END: Proceed with access application])
+
+    DIAGNOSE{DIAGNOSE THE BLOCK -- Is Col 55 non-empty?}
+    DIAGNOSE -->|YES: Col 55 has text| REG_BLOCK
+    DIAGNOSE -->|NO: Col 55 is empty| TECH_DIAG
+
+    REG_BLOCK[REGULATORY BLOCK -- Check Col 55 text: -- Reference value issue = awaiting -- REE-distributor agreement -- May resolve over coming months -- Concurso = must wait for tender -- Check Col 24 to confirm agreement status]
+    REG_BLOCK --> BLOCK_END([END: Node blocked, monitor monthly updates])
+
+    TECH_DIAG[TECHNICAL BLOCK -- Read Cols 45-49 for the criterion code -- Then check the corresponding margin column: -- Din1_Zona = Col 21 should be 0 -- Din2_Zona = Col 22 should be 0 -- WSCR_Nudo = Col 13 should be 0 -- Est_Dem_Nudo = Col 16 should be 0 -- Din1/Din2 blocks have best outlook -- future robustness norms may unlock -- capacity without physical works -- WSCR/Est_Dem blocks need physical -- grid reinforcement]
+    TECH_DIAG --> BLOCK_END
+
+    %% Styling
+    style START fill:#2196F3,color:#fff
+    style PARSE_WARN fill:#FFC107,color:#000
+    style SH_STOP fill:#f44336,color:#fff
+    style NO_BAY_END fill:#f44336,color:#fff
+    style BLOCK_END fill:#f44336,color:#fff
+    style VIABLE_END fill:#4CAF50,color:#fff
+    style VIABLE fill:#4CAF50,color:#fff
+    style READ_CEP_SH fill:#f44336,color:#fff
+    style REG_BLOCK fill:#FF9800,color:#fff
+    style TECH_DIAG fill:#FF5722,color:#fff
+    style NO_BAY fill:#f44336,color:#fff
+    style CODES fill:#7B1FA2,color:#fff
+    style MOTIVOS fill:#7B1FA2,color:#fff

@@ -202,15 +202,46 @@ def binding_criteria_distribution(
 
 
 def generate_report(diag: dict) -> str:
-    """Generate a prose narrative report from a diagnose_node() result.
+    """Generate a structured markdown report from a diagnose_node() result.
 
-    Returns a human-readable multi-line string suitable for terminal or markdown.
+    Returns a human-readable multi-line string with bullets, a summary table,
+    criterion explanations, and all available diagnostic data.
     """
     if "error" in diag:
         return f"Error: {diag['error']}"
 
-    # Plain-English lookup for criterion codes
-    criterion_names = {
+    # --- Criterion context: what it means + what could resolve it -----------
+    _criterion_context = {
+        "WSCR": (
+            "Not enough synchronous generation nearby to anchor voltage — "
+            "the grid is electrically \"weak\" at this point. "
+            "Synchronous condensers, grid-forming inverters, or new "
+            "synchronous generation could lift this limit."
+        ),
+        "Est_Dem": (
+            "Thermal capacity of lines or transformers serving demand is "
+            "exhausted. Grid reinforcement (new lines, transformer upgrades) "
+            "would be needed to increase headroom."
+        ),
+        "Est_Alm": (
+            "Thermal capacity of lines or transformers serving storage "
+            "connections is exhausted. Grid reinforcement (new lines, "
+            "transformer upgrades) would be needed."
+        ),
+        "Din1": (
+            "The zone cannot absorb more load without risking oscillatory "
+            "instability after a fault. Generation closer to load or network "
+            "reinforcement for damping could help."
+        ),
+        "Din2": (
+            "Voltage recovery after faults is too slow in this zone. "
+            "Reactive compensation or additional synchronous machines "
+            "could improve recovery."
+        ),
+    }
+
+    # Human-readable criterion names
+    _criterion_names = {
         "WSCR_Nudo": "WSCR (short-circuit ratio) at this node",
         "WSCR_Zona": "WSCR (short-circuit ratio) in the surrounding zone",
         "Est_Dem_Nudo": "steady-state demand capacity at this node",
@@ -221,151 +252,230 @@ def generate_report(diag: dict) -> str:
         "Din2_Zona": "transient stability (dynamic criterion 2) in the zone",
     }
 
-    # Helpers
-    def _crit(code: str) -> str:
-        if not code:
-            return "not reported"
-        if "/" in code:
-            parts = [criterion_names.get(p.strip(), p.strip()) for p in code.split("/")]
-            return " combined with ".join(parts)
-        return criterion_names.get(code, code)
-
+    # --- Helpers -----------------------------------------------------------
     def _mw(val: int) -> str:
         return f"{val:,} MW"
 
+    def _crit_name(code: str) -> str:
+        if not code:
+            return "not reported"
+        if "/" in code:
+            parts = [_criterion_names.get(p.strip(), p.strip())
+                     for p in code.split("/")]
+            return " combined with ".join(parts)
+        return _criterion_names.get(code, code)
+
+    def _margin_for_criterion(code: str, margins: dict) -> str:
+        """Map a binding criterion code to the corresponding margin value."""
+        if not code:
+            return "—"
+        # For combined criteria (e.g. "Est_Dem_Nudo/Din1_Zona"), use the
+        # minimum margin across the referenced criteria.
+        codes = [c.strip() for c in code.split("/")] if "/" in code else [code]
+        values = []
+        for c in codes:
+            prefix = c.split("_")[0]  # WSCR, Est, Din1, Din2
+            if c.startswith("WSCR"):
+                values.append(margins.get("WSCR_margin", 0))
+            elif c.startswith("Est_Dem"):
+                values.append(margins.get("Est_Dem_margin", 0))
+            elif c.startswith("Est_Alm"):
+                values.append(margins.get("Est_Alm_margin", 0))
+            elif c.startswith("Din1"):
+                values.append(margins.get("Din1_margin", 0))
+            elif c.startswith("Din2"):
+                values.append(margins.get("Din2_margin", 0))
+        if values:
+            return f"{min(values):,}"
+        return "—"
+
+    def _criterion_explanation(code: str) -> str:
+        """Build a 2-3 sentence explanation for a criterion code."""
+        if not code:
+            return ""
+        codes = [c.strip() for c in code.split("/")] if "/" in code else [code]
+        prefixes = []
+        for c in codes:
+            # Extract prefix: WSCR, Est_Dem, Est_Alm, Din1, Din2
+            if c.startswith("WSCR"):
+                prefixes.append("WSCR")
+            elif c.startswith("Est_Dem"):
+                prefixes.append("Est_Dem")
+            elif c.startswith("Est_Alm"):
+                prefixes.append("Est_Alm")
+            elif c.startswith("Din1"):
+                prefixes.append("Din1")
+            elif c.startswith("Din2"):
+                prefixes.append("Din2")
+        # Deduplicate while preserving order
+        seen = set()
+        unique = []
+        for p in prefixes:
+            if p not in seen:
+                seen.add(p)
+                unique.append(p)
+        parts = [_criterion_context[p] for p in unique if p in _criterion_context]
+        return " ".join(parts)
+
+    # --- Unpack diag -------------------------------------------------------
     nudo = diag["nudo"]
     ccaa = diag["ccaa"]
     voltage = int(diag["voltage_kv"])
+    cod_sub = diag.get("cod_subestacion", "")
     avail = diag["available"]
     bind = diag["binding_criteria"]
     margins = diag["margins"]
     status = diag["status"]
+    positions = diag["positions"]
 
     lines: list[str] = []
 
-    # Header
-    lines.append(f"{nudo} — {ccaa} ({voltage} kV)")
+    # === 1. Header =========================================================
+    header = f"## {nudo} — {ccaa} ({voltage} kV)"
+    if cod_sub:
+        header += f"  \nSubstation code: {cod_sub}"
+    lines.append(header)
     lines.append("")
 
-    # Paragraph 1: availability summary
-    cep_ch = avail["CEP_CH"]
-    no_cep = avail["NO_CEP"]
-    storage_cep = avail["Storage_CEP"]
+    # === 2. Status table ===================================================
+    # Define rows: (label, avail_key, bind_key)
+    cap_rows = [
+        ("CEP CH demand", "CEP_CH", "CEP_CH"),
+        ("CEP SH demand", "CEP_SH", "CEP_SH"),
+        ("NO CEP demand", "NO_CEP", "NO_CEP"),
+        ("CEP storage", "Storage_CEP", "Storage_CEP"),
+        ("NO CEP storage", "Storage_NO_CEP", "Storage_NO_CEP"),
+    ]
 
-    if status == "AVAILABLE":
-        lines.append(
-            f"This node has {_mw(cep_ch)} available for new power-electronics "
-            f"demand (CEP CH) and {_mw(no_cep)} for conventional demand."
-        )
-    elif status == "BLOCKED_TECHNICAL":
-        lines.append(
-            f"This node is technically blocked — no capacity is available "
-            f"for new power-electronics demand (CEP CH)."
-        )
-        criterion = bind.get("CEP_CH", "")
-        lines.append(
-            f"The binding constraint is {_crit(criterion)}, which has "
-            f"reached its limit at this connection point."
-        )
-        if no_cep > 0:
-            lines.append(
-                f"However, {_mw(no_cep)} remains available for conventional "
-                f"demand (NO CEP), which is not subject to this constraint."
-            )
-    elif status == "BLOCKED_REGULATORY":
-        lines.append(
-            f"This node is blocked for regulatory reasons: "
-            f"{diag['motivo_no_otorgable']}."
-        )
-    else:
-        lines.append(
-            "This node is blocked. No technical criterion or regulatory "
-            "reason has been reported for the block."
-        )
-
+    lines.append("| Type | Available (MW) | Binding criterion | Margin (MW) |")
+    lines.append("|------|---------------:|-------------------|------------:|")
+    for label, akey, bkey in cap_rows:
+        mw = avail[akey]
+        crit = bind.get(bkey, "")
+        margin = _margin_for_criterion(crit, margins)
+        crit_display = crit if crit else "—"
+        lines.append(f"| {label} | {mw:,} | {crit_display} | {margin} |")
     lines.append("")
 
-    # Paragraph 2: binding criteria detail (only for available nodes)
-    if status == "AVAILABLE":
-        cep_ch_crit = bind.get("CEP_CH", "")
-        no_cep_crit = bind.get("NO_CEP", "")
-        storage_crit = bind.get("Storage_CEP", "")
-
+    # === 3. Why this limit? ================================================
+    primary_crit = bind.get("CEP_CH", "")
+    explanation = _criterion_explanation(primary_crit)
+    if explanation:
+        lines.append("### Why this limit?")
+        lines.append("")
         lines.append(
-            f"The binding constraint for power-electronics demand is "
-            f"{_crit(cep_ch_crit)}. "
-            f"Conventional demand is limited to {_mw(no_cep)} by "
-            f"{_crit(no_cep_crit)}. "
-            f"Storage capacity is {_mw(storage_cep)}"
-            + (f", limited by {_crit(storage_crit)}." if storage_crit else ".")
+            f"The binding criterion for CEP CH demand is "
+            f"**{_crit_name(primary_crit)}**."
         )
         lines.append("")
+        lines.append(explanation)
+        lines.append("")
 
-    # Paragraph 3: granted, pending, agreement
-    granted_dem = diag["otorgada_dem_rdt"]
-    granted_alm = diag["otorgada_alm_rdt"]
-    pending_dem = diag["pendiente_dem_rdt"]
-    pending_alm = diag["pendiente_alm_rdt"]
+    # === 4. Grid connection ================================================
+    bay_labels = {
+        "gen_E": "Generation/storage bay (existing)",
+        "gen_P": "Generation/storage bay (planned)",
+        "con_E": "Demand bay (existing)",
+        "con_P": "Demand bay (planned)",
+        "dist_E": "Distribution connection (existing)",
+        "dist_P": "Distribution connection (planned)",
+    }
+    bay_bullets = []
+    for key, label in bay_labels.items():
+        if positions.get(key):
+            bay_bullets.append(f"- {label}: yes")
+    if not diag["has_demand_bay"]:
+        bay_bullets.append("- **No demand bay** — physical connection needed")
 
-    has_granted = granted_dem > 0 or granted_alm > 0
-    has_pending = pending_dem > 0 or pending_alm > 0
+    if bay_bullets:
+        lines.append("### Grid connection")
+        lines.append("")
+        lines.extend(bay_bullets)
+        lines.append("")
 
-    if has_granted or has_pending:
-        parts = []
-        if granted_dem > 0:
-            parts.append(f"{_mw(granted_dem)} of demand has been granted")
-        if granted_alm > 0:
-            parts.append(f"{_mw(granted_alm)} of storage has been granted")
-        if pending_dem > 0:
-            parts.append(f"{_mw(pending_dem)} of demand is pending")
-        if pending_alm > 0:
-            parts.append(f"{_mw(pending_alm)} of storage is pending")
-        lines.append(", and ".join(parts) + " at this node.")
-    else:
-        lines.append(
-            "No demand has been granted or is pending at this node."
-        )
+    # === 5. Granted & pending ==============================================
+    gp_bullets = []
+    if diag["otorgada_dem_rdt"] > 0:
+        gp_bullets.append(
+            f"- Granted demand (RdT): {_mw(diag['otorgada_dem_rdt'])}")
+    if diag["otorgada_alm_rdt"] > 0:
+        gp_bullets.append(
+            f"- Granted storage (RdT): {_mw(diag['otorgada_alm_rdt'])}")
+    if diag["pendiente_dem_rdt"] > 0:
+        gp_bullets.append(
+            f"- Pending demand: {_mw(diag['pendiente_dem_rdt'])}")
+    if diag["pendiente_alm_rdt"] > 0:
+        gp_bullets.append(
+            f"- Pending storage: {_mw(diag['pendiente_alm_rdt'])}")
 
-    # Agreement
-    acuerdo = diag["estado_acuerdo"]
+    if gp_bullets:
+        lines.append("### Granted & pending")
+        lines.append("")
+        lines.extend(gp_bullets)
+        lines.append("")
+
+    # === 6. Administrative =================================================
+    admin_bullets = []
+
+    # Reference value + agreement
     ref_val = diag["valor_referencia"]
+    acuerdo = diag["estado_acuerdo"]
     if acuerdo == "SI":
-        lines.append(
-            f"The reference value agreement is in place ({_mw(ref_val)})."
-        )
+        admin_bullets.append(
+            f"- Reference value: {_mw(ref_val)} — agreement **reached**")
     elif acuerdo == "NO":
-        lines.append(
-            f"The reference value agreement has NOT been reached "
-            f"({_mw(ref_val)} reference value)."
-        )
+        admin_bullets.append(
+            f"- Reference value: {_mw(ref_val)} — agreement **NOT reached**")
     else:
-        lines.append(
-            "The reference value agreement is not applicable "
-            "(no distribution interface)."
-        )
+        admin_bullets.append(
+            "- Reference value agreement: N/A (no distribution interface)")
 
     # Concurso
     if diag["is_concurso"]:
-        lines.append("This node is subject to competitive tender (concurso).")
-    else:
-        lines.append("This node is not subject to competitive tender.")
+        admin_bullets.append("- Subject to **competitive tender** (concurso)")
 
+    # Non-grantable
+    ng = diag["non_grantable"]
+    motivo = diag.get("motivo_no_otorgable", "")
+    ng_items = []
+    if ng.get("CEP_CH", 0) > 0:
+        ng_items.append(f"CEP CH: {_mw(ng['CEP_CH'])}")
+    if ng.get("NO_CEP", 0) > 0:
+        ng_items.append(f"NO CEP: {_mw(ng['NO_CEP'])}")
+    if ng_items:
+        reason = f" — {motivo}" if motivo else ""
+        admin_bullets.append(
+            f"- Non-grantable: {', '.join(ng_items)}{reason}")
+
+    lines.append("### Administrative")
+    lines.append("")
+    lines.extend(admin_bullets)
     lines.append("")
 
-    # Paragraph 4: alerts and limitations
-    alerts = []
-    if diag["wscr_alertas"]:
-        alerts.append(f"WSCR security alert: {diag['wscr_alertas']}.")
-    else:
-        alerts.append("No WSCR security alerts.")
+    # === 7. Alerts (only if something to report) ===========================
+    alert_bullets = []
+    wscr_alertas = diag.get("wscr_alertas", "")
+    wscr_binudos = diag.get("wscr_binudos", "")
+    # Treat "N/A" as empty
+    if wscr_alertas and wscr_alertas != "N/A":
+        bullet = f"- WSCR alert: {wscr_alertas}"
+        if wscr_binudos and wscr_binudos != "N/A":
+            bullet += f" (shared with {wscr_binudos})"
+        alert_bullets.append(bullet)
+    elif wscr_binudos and wscr_binudos != "N/A":
+        alert_bullets.append(
+            f"- WSCR shared node: {wscr_binudos}")
 
     limit_temp = diag.get("est_dem_limit_temp", "")
     if limit_temp and limit_temp not in ("No", ""):
-        alerts.append(f"Substation configuration limitation: {limit_temp}.")
-    else:
-        alerts.append("No substation configuration limitations.")
+        alert_bullets.append(
+            f"- Configuration limitation: {limit_temp}")
 
-    lines.append(" ".join(alerts))
+    if alert_bullets:
+        lines.append("### Alerts")
+        lines.append("")
+        lines.extend(alert_bullets)
+        lines.append("")
 
     return "\n".join(lines)
 

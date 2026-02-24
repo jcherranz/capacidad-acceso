@@ -345,10 +345,10 @@ with tab3:
             color_discrete_sequence=["#e0af68"],
         )
         fig_motivo.update_layout(
-            yaxis={"autorange": "reversed"},
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="Fira Code, monospace", color="#a9b1d6", size=11),
-            xaxis=dict(gridcolor="#292e42"), yaxis=dict(gridcolor="#292e42"),
+            xaxis=dict(gridcolor="#292e42"),
+            yaxis=dict(autorange="reversed", gridcolor="#292e42"),
         )
         st.plotly_chart(fig_motivo, use_container_width=True)
 

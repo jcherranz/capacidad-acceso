@@ -25,6 +25,11 @@ st.set_page_config(
 
 @st.cache_data
 def get_data():
+    from capacidad.models import DEFAULT_CSV
+    if not DEFAULT_CSV.exists():
+        from capacidad.download import download_csv
+        with st.spinner("Downloading data from REE..."):
+            download_csv()
     return load_csv()
 
 
